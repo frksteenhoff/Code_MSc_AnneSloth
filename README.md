@@ -14,3 +14,10 @@ A library of the helper functions used in the above iPython Notebook. These func
 
 ### How to run the code
 All code in the iPython Notebook and how to run it is described in the Notebook.
+
+### Links to sources
+These links are the ones provided in the Master Thesis
+* Notebook - http://nbviewer.jupyter.org/github/frksteenhoff/Code_MSc_AnneSloth/blob/master/Code_MSc_AnneSloth_s112862.ipynb
+* Notebook (Shortened URL) - https://goo.gl/7Pqj9f
+* External functions - https://github.com/frksteenhoff/Code_MSc_AnneSloth/blob/master/externalFunctions.py
+* External functions (shortened URL) - https://goo.gl/pmDpG4
