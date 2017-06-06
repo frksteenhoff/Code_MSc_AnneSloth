@@ -38,11 +38,12 @@ plotly.tools.set_credentials_file(username='frksteenhoff2', api_key ='duu8hsfRmu
 
 base_path = "C:/Users/frksteenhoff/Dropbox/Data eksempel til Henriette/"
 # Data locations
-weekNumber = 18
+weekNumber = 19
 netpath   = base_path + "Data week " + str(weekNumber) + "/Netatmo"
 weekpath  = base_path + "Data week " + str(weekNumber)
 PIRpath   = base_path + "Data week " + str(weekNumber) + "/ProcessedData/PIRReed/"
 COMpath   = base_path + "Data week " + str(weekNumber) + "/ProcessedData/CompAcc/"
+co2path   = base_path + "Data week " + str(weekNumber) +  "/Netatmo/CO2"
 
 # Change back known folder structure
 testpath  = base_path + "Program - extractWork/"
@@ -385,8 +386,70 @@ def createHumidityPlot(dataFrame, hour_cnt_netatmo, hour_cnt_have, room_n, locat
 
 # ------------------------------------------------------------------------------------------- #
 
+# Create CO2 plot
+# dataFrame = dataframe with co2 values
+# col1-3    = plotting colors
+# room_n    = room name
+# extension = identification of plotting type
+def createCO2plot(dataFrame, col1, col2, col3, room_n, extension):
+    val = []
+    # Find CO2-values between boundaries!
+    perc_u     = dataFrame.loc[dataFrame['CO2'] < 1000]
+    perc_b     = dataFrame.loc[dataFrame['CO2'] >= 1000]
+    prcb2      = perc_b.loc[perc_b['CO2']     < 1500]
+    perc_o     = dataFrame.loc[dataFrame['CO2'] >= 1500]
+    all_values = len(perc_u) + len(prcb2) + len(perc_o)
+    # Uncomment below to see plotting values as percentage
+    #print round(float(len(perc_u)/float(all_values)),2), round(float(len(prcb2)/float(all_values)),2), round(float(len(perc_o)/float(all_values)),2), all_values
 
+    val.append(float(len(perc_u)) / float(all_values) * 100)
+    val.append(float(len(prcb2))  / float(all_values) * 100)
+    val.append(float(len(perc_o)) / float(all_values) * 100)
+           
+    # ----------------------------------------------------------------- #
+    # Save plot to proper location
+    # ----------------------------------------------------------------- #
+    chdir(viz_path)
+    # week number and home alias from earlier variables
+    # Plot of air 
+    fig = {
+        'data': [{'labels': ['Indenfor anbefaling', 'Lidt over anbefaling', 'Over anbefaling'],
+                  'values': val,
+                  'type': 'pie',
+                  'marker': {'colors': [col1,
+                                        col2,
+                                        col3]},
+                  'textinfo': 'none'}],              
+        'layout': { 'autosize': False,
+                    'width': 350,
+                    'height': 350,
+                    "paper_bgcolor": "rgba(0, 0, 0, 0)",
+                    "plot_bgcolor": "rgba(0, 0, 0, 0)",
+                    'showlegend': False}
+         }
 
-
+    # Save to folder
+    fullPathToPlot = room_n + extension
+    py.image.save_as(fig, filename=fullPathToPlot)
+    #Image(fullPathToPlot) # Display static image
 
 # ------------------------------------------------------------------------------------------- #
+def getRoomName(pattern, rooms):
+    bed_pattern = re.compile(bed_pattern)
+    
+    if bed_pattern.match(rooms.split(" ")[1]):
+        roomName = 'bedroom'
+        print rooms.split(" ")[1]
+    elif len(rooms.split(" ")) > 2 and bed_pattern.match(rooms.split(" ")[2]):
+        roomName = 'bedroom'
+        print rooms.split(" ")[2]
+    elif len(rooms.split(" ")) > 3 and bed_pattern.match(rooms.split(" ")[3]):
+        roomName = 'bedroom'
+        print rooms.split(" ")[3]
+    elif len(rooms.split(" ")) > 4 and bed_pattern.match(rooms.split(" ")[4]):
+        roomName = 'bedroom'
+        print rooms.split(" ")[4]
+    else:
+        roomName = 'livingroom'
+        print rooms
+    return roomName
