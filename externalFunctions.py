@@ -1,8 +1,8 @@
 # ------------------------------------------------------------------------------------------- #
 # AUTHOR: Henriette Steenhoff, s134869
-# All rights reserved, April 2017
+# All rights reserved, May 2017
 #
-# External functions used in 'AA-Data_Extract-Visualization-Anne.ipynb' the data extract 
+# External functions used in 'Code_MSc_AnneSloth_s112862.ipynb' -- the data extraction 
 # and plotting script for Anne Sloth Bidstrup's Master Thesis @ Danmarks Tekniske Universitet
 # ------------------------------------------------------------------------------------------- #
 
@@ -34,11 +34,11 @@ plotly.tools.set_credentials_file(username='frksteenhoff2', api_key ='duu8hsfRmu
 ## DATA PATHS
 # ------------------------------------------------------------------------------------------- #
 # Folder structure for different data -- Using Anne's folder structure from Dropbox
-weekNumber = date.today().isocalendar()[1]-1
+#weekNumber = date.today().isocalendar()[1]-1
 
 base_path = "C:/Users/frksteenhoff/Dropbox/Data eksempel til Henriette/"
 # Data locations
-#weekNumber = 13
+weekNumber = 18
 netpath   = base_path + "Data week " + str(weekNumber) + "/Netatmo"
 weekpath  = base_path + "Data week " + str(weekNumber)
 PIRpath   = base_path + "Data week " + str(weekNumber) + "/ProcessedData/PIRReed/"
@@ -89,6 +89,39 @@ def saveDataframeToPath(dataFrame, fileName, path):
 
 # ------------------------------------------------------------------------------------------- #
 
+
+# Extracting outdoor temperature information from outdoor "have file" for use in humidity calculation
+# Input:
+# dataFrame - have to contain timestamp named 'Timezone : Europe/Copenhagen', 'Hour' and 'Temperature'
+
+# Average temp per hour of day for week 
+def haveCalculation(dataFrame):
+    hour_cnt = {}
+    daysInWeek = []
+    # Extract all days in week from 1st day and seven days forward
+    # due to missing data this has to be stated explicitly
+    for days in pd.date_range(dataFrame['Timezone : Europe/Copenhagen'].unique().min(), periods=7):
+        daysInWeek.append(days.day)
+        
+    # Extract temp for each hour of each day
+    for day in daysInWeek:
+        for hour in range(0,24):
+            # Find relevant hour of day
+            dayCombo   = str(day)+"-"+str(hour)
+            hourlyTemp = dataFrame.loc[dataFrame['con'].isin([dayCombo])]
+            
+            # Summing the temperatures
+            # If no entries for given hour - 
+            # impute with median for remaining days at same hour
+            if len(hourlyTemp) == 0:
+                dailyTemp = dataFrame.loc[dataFrame['Hour'].isin([hour])]
+                hour_cnt[dayCombo] = dailyTemp['Temperature'].median()
+            else:
+                # Else add average of hour for specific day
+                hour_cnt[dayCombo] = hourlyTemp['Temperature'].sum(axis=0)/(len(hourlyTemp))
+    return hour_cnt
+
+# ------------------------------------------------------------------------------------------- #
 
 
 # Functions for extracting data from pandas dataframe
@@ -173,7 +206,9 @@ def createTempPlot(dataFrame, tempLiv, tempBed, location_n, room_n, pattern, tAx
     )
 
     # Choose whether to use living room/kitchen temp or bedroom temp - overall
-    if pattern.match(room_n):
+    print room_n
+    new_pat = re.compile(pattern)
+    if new_pat.match(room_n):
         trace2 = go.Scatter(
               x = pd.to_datetime(tempLiv.Timezone),
               y = list(tempLiv.newTemp),
@@ -241,68 +276,84 @@ def createTempPlot(dataFrame, tempLiv, tempBed, location_n, room_n, pattern, tAx
 
 # Plot humidity for each room
 # Extract ``have`` file information -- outdoor temperature
-def createHumidityPlot(dataFrame, hour_cnt_netatmo, hour_cnt_have, dir_, room_n, location_n, col1, col2, col3):
-    # initialize arrays for limit values rh_gul and rh_roed
+def createHumidityPlot(dataFrame, hour_cnt_netatmo, hour_cnt_have, room_n, location_n, col1, col2, col3, livpat, bedpat):
     # If directory path does not exist - create it
+    livingroom_pattern = re.compile(livpat)
+    bedroom_pattern = re.compile(bedpat)
     if not path.exists(viz_path):
         makedirs(viz_path)
     chdir(viz_path)
     
-    room    = ""
-    rh_gul  = []
-    rh_roed = []
+    # initialize arrays for limit values rh_gul and rh_roed
+    room     = ""
+    rh_gul   = []
+    rh_roed  = []
+    pmv_list = []
+    pmi_list = []
+    hr_data  = []
     rh_boundaries = pd.DataFrame()
-
+    
     # Calculations for humidity equation
     # Constants
     for i in range(0,24):
-        t_i     = np.asarray(hour_cnt_netatmo.values()) + 273.15  # converted to Kelvin
-        t_ude   = np.asarray(hour_cnt_have.values())    + 273.15  # converted to Kelvin
-        t_v     = np.add(Fraction(1,3)*t_ude[i], Fraction(2,3)*t_i[i])
+        t_i   = np.asarray(hour_cnt_netatmo.values()) + 273.15  # converted to Kelvin
+        t_ude = np.asarray(hour_cnt_have.values())    + 273.15  # converted to Kelvin
+        t_v   = np.add(Fraction(1,3)*t_ude[i], Fraction(2,3)*t_i[i])
 
         # Limit equations
-        p_mv    = ((math.exp(77.3450 + 0.0057*t_v)    - (7235.0 / t_v))    / t_v**8.2)
-        p_mi    = ((math.exp(77.3450 + 0.0057*t_i[i]) - (7235.0 / t_i[i])) / t_i[i]**8.2)
+        p_mv  = math.exp(77.3450 + 0.0057*t_v    - 7235.0 / t_v)    / (t_v**8.2)
+        p_mi  = math.exp(77.3450 + 0.0057*t_i[i] - 7235.0 / t_i[i]) / (t_i[i]**8.2)
         
         # Equation for upper and lower bound
         rh_gul.append(0.6 * p_mv / p_mi)
         rh_roed.append(0.75 * p_mv / p_mi)
+        pmi_list.append(p_mi)
+        pmv_list.append(p_mv)
 
+    print "Humidity boundaries calculated"
     # Humidity
     # Only for rooms with humidity measure
-    hr_data = dataFrame[['Humidity', 'Kelvin', 'Hour']] # Using Kelvin temperatures
+    hr_data = dataFrame[['Humidity', 'Kelvin', 'Hour', 'Temperature','Date','Time']] # Using Kelvin temperatures
+    hr_data['rh_gul'] = np.zeros(len(hr_data))
+    hr_data['rh_roed'] = np.zeros(len(hr_data))
     # Initialize rh-dict for value groups
     rh_dict = dict.fromkeys(['middleValue', 'lowValue', 'highValue'], 0)
     
     # Check netatmo data against humidity boundaries for each hour of day
     for i in range(0, len(hr_data['Humidity'])):
-        # Only for testing
-        #print hr_data.iloc[i,0], rh_gul[hr_data.iloc[i,2]], rh_roed[hr_data.iloc[i,2]]
         # if humidity value are between rh_gul and rh_roed at given hour
-        if hr_data.iloc[i,0] > rh_gul[hr_data.iloc[i,2]] and hr_data.iloc[i,0] < rh_roed[hr_data.iloc[i,2]]:
+        if hr_data.iloc[i,0] > rh_gul[hr_data.iloc[i,2]] * 100 and hr_data.iloc[i,0] < rh_roed[hr_data.iloc[i,2]] * 100:
             rh_dict['middleValue'] += 1
         # If humidity is less than rh_gul
-        elif hr_data.iloc[i,0] < rh_gul[hr_data.iloc[i,2]]:
+        elif hr_data.iloc[i,0] < rh_gul[hr_data.iloc[i,2]] * 100:
             rh_dict['lowValue'] += 1
         # If humidity is greater than rh_roed 
-        elif hr_data.iloc[i,0] > rh_roed[hr_data.iloc[i,2]]:
+        elif hr_data.iloc[i,0] > rh_roed[hr_data.iloc[i,2]] * 100:
             rh_dict['highValue'] += 1
         else:
             print 'Something fails'
-    #Save HR data for room to file
-    ex.saveDataframeToPath(hr_data, location_n + 'HR-temp_humidity', netpath+"/HR")
-    # Save boundaries and temperatures to file
-    rh_boundaries['t_i']     = t_i  
-    rh_boundaries['t_ude']   = t_ude
-    rh_boundaries['rh_gul']  = rh_gul
-    rh_boundaries['rh_roed'] = rh_roed
-    ex.saveDataframeToPath(rh_boundaries, location_n + 'HR-boundaries', netpath+"/HR")
-    chdir(viz_path)
+        # For each value, set the  limits...
+        hr_data.iloc[i,6] = rh_gul[hr_data.iloc[i,2]]
+        hr_data.iloc[i,7] = rh_roed[hr_data.iloc[i,2]]
+    
+    room     = room_n.encode("ascii", "ignore").replace("/", "")
+    print room
+    room_id = ""
+    if livingroom_pattern.match(room):
+        room_id = "livingroom"
+    elif bedroom_pattern.match(room):
+        room_id = "bedroom"
+    else:
+        room_id = "other"
+
+    #Save HR data for room to file - bedroom/livingroom as extension to match room in house
+    #saveDataframeToPath(hr_data[['Date', 'Time', 'Humidity', 'Temperature', 'rh_gul', 'rh_roed']], location_n + '-RH-' + room_id, netpath+"/HR")
+    #chdir(viz_path)
 
     # Save plot to proper location
-    plotType = '-hr'           # type: humidity rate
+    plotType = '-RH-'           # type: relative humidity
     room     = room_n.encode("ascii", "ignore").replace("/", "")
-    filen    = location_n + plotType + "-" + room + ".png"
+    filen    = location_n + plotType + room + ".png"
     filen    = filen.replace(" ", "")
 
     # Plot over fresh air 
@@ -327,10 +378,10 @@ def createHumidityPlot(dataFrame, hour_cnt_netatmo, hour_cnt_have, dir_, room_n,
 
     # Save to folder
     py.image.save_as(fig, filename=filen)
+    print "Plot created " + filen
     # Plot result
     #Image(fullPathToPlot) # Display a static image
     #py.iplot(fig)
-
 
 # ------------------------------------------------------------------------------------------- #
 
